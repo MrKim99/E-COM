@@ -1,0 +1,6 @@
+{
+  "name": "E-Commerce MVP",
+  "description": "Hệ thống bán hàng MVP hoàn chỉnh tích hợp Supabase và Resend với giao diện Admin và bộ lọc sản phẩm nâng cao.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
