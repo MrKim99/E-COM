@@ -57,7 +57,7 @@ function writeStoreSettings(settings: any) {
 
 
 // Endpoint to handle Base64 file uploads from client
-app.post("/api/upload", (req, res) => {
+app.post("/api/upload", async (req, res) => {
   const { name, base64 } = req.body;
   if (!base64 || !name) {
     return res.status(400).json({ error: "No base64 data or filename provided" });
@@ -65,22 +65,65 @@ app.post("/api/upload", (req, res) => {
 
   try {
     // Remove data:image/...;base64, prefix if present
+    const matches = base64.match(/^data:(image\/\w+);base64,/);
+    const mimeType = matches ? matches[1] : "image/png";
     const base64Data = base64.replace(/^data:image\/\w+;base64,/, "");
     const buffer = Buffer.from(base64Data, 'base64');
     
+    const ext = path.extname(name) || '.png';
+    const timestamp = Date.now();
+    const safeName = `${timestamp}-${Math.random().toString(36).substring(2, 9)}${ext}`;
+
+    // Try uploading to Supabase Storage if connection is present
+    const supabase = getSupabase();
+    if (supabase) {
+      try {
+        const bucketName = "uploads";
+        // Attempt to upload file
+        const { data, error } = await supabase.storage
+          .from(bucketName)
+          .upload(safeName, buffer, {
+            contentType: mimeType,
+            upsert: true
+          });
+
+        if (!error) {
+          const publicUrl = supabase.storage.from(bucketName).getPublicUrl(safeName).data.publicUrl;
+          console.log(`Successfully uploaded file to Supabase Storage: ${publicUrl}`);
+          return res.json({ url: publicUrl });
+        } else {
+          console.warn("Supabase storage upload failed, trying bucket creation...", error.message);
+          // Auto create bucket if not exist (since RLS may allow public read)
+          await supabase.storage.createBucket(bucketName, { public: true });
+          const { error: retryError } = await supabase.storage
+            .from(bucketName)
+            .upload(safeName, buffer, {
+              contentType: mimeType,
+              upsert: true
+            });
+          
+          if (!retryError) {
+            const publicUrl = supabase.storage.from(bucketName).getPublicUrl(safeName).data.publicUrl;
+            console.log(`Successfully uploaded file to Supabase Storage on retry: ${publicUrl}`);
+            return res.json({ url: publicUrl });
+          } else {
+            console.warn("Supabase storage retry upload failed:", retryError.message);
+          }
+        }
+      } catch (storageErr) {
+        console.warn("Supabase storage connection failed during upload:", storageErr);
+      }
+    }
+
+    // Disk-based fallback for standard local server containers
     const uploadDir = path.join(process.cwd(), "uploads");
     if (!fs.existsSync(uploadDir)) {
       fs.mkdirSync(uploadDir, { recursive: true });
     }
     
-    // Clean filename to be safe from path traversal and add unique timestamp
-    const ext = path.extname(name) || '.png';
-    const timestamp = Date.now();
-    const safeName = `${timestamp}-${Math.random().toString(36).substring(2, 9)}${ext}`;
     const filePath = path.join(uploadDir, safeName);
-    
     fs.writeFileSync(filePath, buffer);
-    console.log(`Successfully saved uploaded file to ${filePath}`);
+    console.log(`Successfully saved uploaded file locally to ${filePath}`);
     return res.json({ url: `/uploads/${safeName}` });
   } catch (error: any) {
     console.error("Error during file upload saving:", error);
@@ -702,9 +745,14 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`E-Commerce MVP Full Stack server running at http://localhost:${PORT}`);
-  });
+  // Only bind port when not running as a Vercel Serverless Function
+  if (!process.env.VERCEL) {
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`E-Commerce MVP Full Stack server running at http://localhost:${PORT}`);
+    });
+  }
 }
 
 startServer();
+
+export default app;

@@ -75,20 +75,23 @@ export default function AdminStoreSettings({
           body: JSON.stringify({ name: file.name, base64 }),
         });
 
-        if (!res.ok) {
-          const errData = await res.json();
-          throw new Error(errData.error || "Lỗi tải ảnh lên máy chủ");
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.url) {
+            setLogoUrl(data.url);
+            setMessage({ type: "success", text: "Đã tải logo lên góc bán hàng thành công!" });
+            setUploading(false);
+            return;
+          }
         }
-
-        const data = await res.json();
-        setLogoUrl(data.url);
-        setMessage({ type: "success", text: "Đã tải logo lên góc bán hàng thành công!" });
       } catch (err: any) {
-        console.error("Logo upload error:", err);
-        setMessage({ type: "error", text: `Không thể tải logo: ${err.message}` });
-      } finally {
-        setUploading(false);
+        console.warn("Logo upload error, using local base64 fallback:", err);
       }
+
+      // Fallback: use Base64 string directly in local settings
+      setLogoUrl(base64);
+      setMessage({ type: "success", text: "Đã thiết lập logo cục bộ thành công! (Chế độ tương thích Vercel)" });
+      setUploading(false);
     };
     reader.readAsDataURL(file);
   };

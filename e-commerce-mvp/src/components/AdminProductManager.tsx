@@ -126,20 +126,23 @@ export default function AdminProductManager({
           }),
         });
 
-        if (!response.ok) {
-          const errData = await response.json();
-          throw new Error(errData.error || "Lỗi tải ảnh lên máy chủ");
+        if (response.ok) {
+          const data = await response.json();
+          if (data && data.url) {
+            setImageUrl(data.url);
+            setSubmitSuccess("Đã tải hình ảnh thành công!");
+            setUploadingImage(false);
+            return;
+          }
         }
-
-        const data = await response.json();
-        setImageUrl(data.url);
-        setSubmitSuccess("Đã tải hình ảnh thành công!");
       } catch (err: any) {
-        console.error("Upload error:", err);
-        setSubmitError(`Lỗi tải ảnh: ${err.message}`);
-      } finally {
-        setUploadingImage(false);
+        console.warn("Product image upload to server failing, using base64 fallback:", err);
       }
+
+      // Local storage/Base64 compatibility mode fallback
+      setImageUrl(base64);
+      setSubmitSuccess("Đã tải hình ảnh cục bộ thành công! (Chế độ tương thích Vercel)");
+      setUploadingImage(false);
     };
 
     reader.onerror = () => {
