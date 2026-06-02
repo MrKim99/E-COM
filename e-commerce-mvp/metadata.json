@@ -1,0 +1,6 @@
+{
+  "name": "E-commerce MVP",
+  "description": "Hệ thống E-commerce MVP có đầy đủ chức năng Cửa hàng, Giỏ hàng, Bộ lọc Tìm kiếm Nâng cao, Quản lý Sản phẩm, Đơn hàng, và cấu hình Thương hiệu dành cho người bán.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
