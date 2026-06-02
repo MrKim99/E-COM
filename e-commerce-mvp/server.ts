@@ -13,6 +13,15 @@ const PORT = 3000;
 
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
+
+// Cache-busting middleware for all API routing to prevent severe edge caching on Vercel
+app.use("/api", (req, res, next) => {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
+  next();
+});
+
 app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 
 const SETTINGS_FILE_PATH = path.join(process.cwd(), "settings-db.json");
@@ -33,25 +42,90 @@ const defaultSettings = {
   zalo_url: "https://zalo.me/0987654321"
 };
 
+let currentSettingsCache: any = null;
+
 function readStoreSettings() {
+  if (currentSettingsCache) {
+    return currentSettingsCache;
+  }
   try {
     if (fs.existsSync(SETTINGS_FILE_PATH)) {
       const content = fs.readFileSync(SETTINGS_FILE_PATH, "utf-8");
-      return { ...defaultSettings, ...JSON.parse(content) };
+      currentSettingsCache = { ...defaultSettings, ...JSON.parse(content) };
+      return currentSettingsCache;
     }
   } catch (err) {
     console.error("Error reading settings-db.json, using defaults:", err);
   }
-  return defaultSettings;
+  currentSettingsCache = { ...defaultSettings };
+  return currentSettingsCache;
 }
 
-function writeStoreSettings(settings: any) {
+async function readStoreSettingsAsync() {
+  const supabase = getSupabase();
+  if (supabase) {
+    try {
+      const { data, error } = await supabase
+        .from("settings")
+        .select("value")
+        .eq("id", "store_settings")
+        .single();
+      
+      if (!error && data && data.value) {
+        console.log("Loaded store settings from Supabase database.");
+        currentSettingsCache = { ...defaultSettings, ...data.value };
+        return currentSettingsCache;
+      } else if (error && error.code === "PGRST116") {
+        // Table exists but row not found. Let's auto-seed settings
+        console.log("Settings row not found in Supabase. Auto-seeding default store configs...");
+        const defaultWithMerged = { ...defaultSettings };
+        try {
+          if (fs.existsSync(SETTINGS_FILE_PATH)) {
+            const content = fs.readFileSync(SETTINGS_FILE_PATH, "utf-8");
+            Object.assign(defaultWithMerged, JSON.parse(content));
+          }
+        } catch (e) {}
+
+        await supabase
+          .from("settings")
+          .upsert({ id: "store_settings", value: defaultWithMerged });
+        
+        currentSettingsCache = defaultWithMerged;
+        return currentSettingsCache;
+      }
+    } catch (err) {
+      console.warn("Unable to query settings table from Supabase (may need SQL schema setup):", err);
+    }
+  }
+
+  return readStoreSettings();
+}
+
+async function writeStoreSettingsAsync(settings: any) {
+  currentSettingsCache = { ...defaultSettings, ...settings };
+  
+  const supabase = getSupabase();
+  if (supabase) {
+    try {
+      const { error } = await supabase
+        .from("settings")
+        .upsert({ id: "store_settings", value: currentSettingsCache });
+      if (!error) {
+        console.log("Successfully persisted store settings to Supabase.");
+      } else {
+        console.warn("Supabase settings upsert failed:", error.message);
+      }
+    } catch (e) {
+      console.warn("Could not save settings to Supabase (table may not exist):", e);
+    }
+  }
+
   try {
-    fs.writeFileSync(SETTINGS_FILE_PATH, JSON.stringify(settings, null, 2), "utf-8");
+    fs.writeFileSync(SETTINGS_FILE_PATH, JSON.stringify(currentSettingsCache, null, 2), "utf-8");
     return true;
-  } catch (err) {
-    console.error("Error writing settings-db.json:", err);
-    return false;
+  } catch (err: any) {
+    console.warn("Writing settings-db.json failed - using in-memory settings backup:", err.message);
+    return true;
   }
 }
 
@@ -237,11 +311,21 @@ let supabaseClient: any = null;
 let resendClient: Resend | null = null;
 
 function getSupabase() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  let url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
+  let anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
+  let serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!url || (!anonKey && !serviceRoleKey)) {
+    return null;
+  }
+
+  // Clean and sanitize strings by trimming and stripping enclosing single or double quotes
+  url = url.trim().replace(/^['"]|['"]$/g, "");
+  if (anonKey) anonKey = anonKey.trim().replace(/^['"]|['"]$/g, "");
+  if (serviceRoleKey) serviceRoleKey = serviceRoleKey.trim().replace(/^['"]|['"]$/g, "");
+
+  if (!url.startsWith("http")) {
+    console.warn("Invalid Supabase URL format after cleaning:", url);
     return null;
   }
 
@@ -254,10 +338,16 @@ function getSupabase() {
 }
 
 function getResend() {
-  const apiKey = process.env.RESEND_API_KEY;
-  if (!apiKey || apiKey === "MY_RESEND_API_KEY") {
+  let apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) {
     return null;
   }
+
+  apiKey = apiKey.trim().replace(/^['"]|['"]$/g, "");
+  if (!apiKey || apiKey === "MY_RESEND_API_KEY" || apiKey === "re_123456789abcdef") {
+    return null;
+  }
+
   if (!resendClient) {
     resendClient = new Resend(apiKey);
   }
@@ -279,30 +369,31 @@ const getSellerEmail = () => {
 // --- API ENDPOINTS ---
 
 // 1. Get system & integration configuration statuses
-app.get("/api/config", (req, res) => {
+app.get("/api/config", async (req, res) => {
+  const settings = await readStoreSettingsAsync();
   res.json({
     supabaseConnected: !!getSupabase(),
     resendConnected: !!getResend(),
-    sellerEmail: getSellerEmail(),
+    sellerEmail: settings.order_email || "achau.kimduc@gmail.com",
   });
 });
 
 // 1b. Get and Update Store Settings
-app.get("/api/settings", (req, res) => {
-  const currentSettings = readStoreSettings();
+app.get("/api/settings", async (req, res) => {
+  const currentSettings = await readStoreSettingsAsync();
   res.json(currentSettings);
 });
 
-app.post("/api/settings", (req, res) => {
+app.post("/api/settings", async (req, res) => {
   const settingsData = req.body;
   if (!settingsData) {
     return res.status(400).json({ error: "Dữ liệu cấu hình trống." });
   }
 
-  const current = readStoreSettings();
+  const current = await readStoreSettingsAsync();
   const merged = { ...current, ...settingsData };
   
-  const success = writeStoreSettings(merged);
+  const success = await writeStoreSettingsAsync(merged);
   if (success) {
     res.json({ success: true, settings: merged });
   } else {
@@ -314,7 +405,8 @@ app.post("/api/settings", (req, res) => {
 // 2. Auth: Admin login handler
 app.post("/api/admin/login", async (req, res) => {
   const { email, password } = req.body;
-  const targetSellerEmail = getSellerEmail();
+  const settings = await readStoreSettingsAsync();
+  const targetSellerEmail = settings.order_email || "achau.kimduc@gmail.com";
 
   // If Supabase is connected, we can try to log in via Supabase Auth
   const supabase = getSupabase();
@@ -378,12 +470,47 @@ app.get("/api/products", async (req, res) => {
         .order("created_at", { ascending: false });
 
       if (!error && data) {
-        // Format products to match interface requirements (ensure discounted_price is computed)
-        const formatted = data.map((p: any) => ({
-          ...p,
-          discounted_price: p.original_price - (p.original_price * (p.discount_percent || 0)) / 100,
-        }));
-        return res.json(formatted);
+        // AUTOMATIC SEEDING IF CLOUD DB IS CONNECTED BUT HAS 0 PRODUCTS
+        if (data.length === 0) {
+          console.log("Supabase products schema exists but has 0 items. Auto-seeding default medicines so shop page has content...");
+          try {
+            const seedProducts = localProducts.map(p => ({
+              name: p.name,
+              category: p.category,
+              original_price: p.original_price,
+              discount_percent: p.discount_percent,
+              description: p.description,
+              image_url: p.image_url,
+              video_url: p.video_url || "",
+              is_featured: p.is_featured,
+              is_on_sale: p.is_on_sale
+            }));
+            const { data: inserted, error: insertError } = await supabase
+              .from("products")
+              .insert(seedProducts)
+              .select();
+            
+            if (!insertError && inserted) {
+              console.log(`Auto-seeded ${inserted.length} default products in Supabase.`);
+              const formatted = inserted.map((p: any) => ({
+                ...p,
+                discounted_price: p.original_price - (p.original_price * (p.discount_percent || 0)) / 100,
+              }));
+              return res.json(formatted);
+            } else {
+              console.warn("Auto-seeding products into Supabase failed:", insertError);
+            }
+          } catch (seedErr) {
+            console.error("Products seeding exception caught:", seedErr);
+          }
+        } else {
+          // Format products to match interface requirements (ensure discounted_price is computed)
+          const formatted = data.map((p: any) => ({
+            ...p,
+            discounted_price: p.original_price - (p.original_price * (p.discount_percent || 0)) / 100,
+          }));
+          return res.json(formatted);
+        }
       } else {
         console.warn("Supabase products fetch failed, using local memory:", error);
       }
@@ -696,7 +823,9 @@ app.post("/api/orders", async (req, res) => {
   const resend = getResend();
   if (resend) {
     try {
-      const sellerEmail = getSellerEmail();
+      const settings = await readStoreSettingsAsync();
+      const sellerEmail = settings.order_email || "achau.kimduc@gmail.com";
+      
       const mailResponse = await resend.emails.send({
         from: "E-Commerce MVP <onboarding@resend.dev>", // Default sandboxed domain
         to: [sellerEmail],
@@ -704,16 +833,16 @@ app.post("/api/orders", async (req, res) => {
         html: emailHtml,
       });
 
-      if (mailResponse && mailResponse.data) {
+      if (mailResponse && !mailResponse.error) {
         emailSent = true;
-        emailLogMsg = `Successfully sent notification email to ${sellerEmail} via Resend. ID: ${mailResponse.data.id}`;
+        emailLogMsg = `Gửi email thành công tới ${sellerEmail} qua Resend Live. ID: ${mailResponse.data?.id}`;
       } else {
         console.error("Resend sending returned error:", mailResponse.error);
-        emailLogMsg = `Failed sending email through Resend: ${JSON.stringify(mailResponse.error)}`;
+        emailLogMsg = `Lỗi Resend API: [Cần cấu hình API Key Live và đặt email nhận trùng khớp với tài khoản đăng ký Resend] Chi tiết: ${JSON.stringify(mailResponse.error)}`;
       }
     } catch (err: any) {
       console.error("Error invoking Resend Client:", err);
-      emailLogMsg = `Error invoking Resend Client: ${err?.message || err}`;
+      emailLogMsg = `Lỗi hệ thống khi gọi Resend: ${err?.message || err}`;
     }
   }
 

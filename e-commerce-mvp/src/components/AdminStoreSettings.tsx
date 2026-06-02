@@ -491,6 +491,52 @@ export default function AdminStoreSettings({
           </div>
         </form>
       </div>
+
+      {/* Modern, high fidelity onboarding instructions for Supabase & Resend connection on Vercel */}
+      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm mt-6">
+        <h4 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2 mb-3">
+          <span className="flex h-5 w-5 items-center justify-center rounded-md bg-blue-100 text-blue-600 text-xs font-bold">💡</span>
+          HƯỚNG DẪN CẤU HÌNH LIÊN KẾT CLOUD (VERCEL / PRODUCTION LIVE)
+        </h4>
+        <p className="text-xs text-slate-500 leading-relaxed mb-4">
+          Khi bạn chạy ứng dụng thực tế trên môi trường Vercel hoặc Cloud, các thay đổi lưu trữ và gửi email cần được kết nối trực tiếp với <strong>Supabase</strong> và <strong>Resend</strong> để hoạt động an toàn vĩnh viễn. Hãy thiết lập các biến môi trường sau trong bảng điều khiển (Dashboard) của Vercel:
+        </p>
+
+        <div className="space-y-4 font-mono text-[11px]">
+          {/* Supabase block */}
+          <div className="p-3.5 rounded-xl border border-slate-150 bg-slate-50/50 space-y-2">
+            <span className="inline-flex items-center gap-1 rounded bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-800">
+              SUPABASE DATABASE (Lưu trữ lâu dài)
+            </span>
+            <p className="text-slate-500 font-sans text-[10px] leading-relaxed">Kết nối tài khoản Supabase của bạn và chạy mã SQL trong tệp <code className="bg-slate-200 px-1 rounded text-slate-700">supabase_schema.sql</code> để tạo các bảng sản phẩm, cấu hình cửa hàng (settings) và đơn hàng.</p>
+            <div className="space-y-1.5 pt-1.5 border-t border-slate-250">
+              <div className="flex flex-col sm:flex-row sm:justify-between py-0.5"><span className="text-slate-800 font-bold">NEXT_PUBLIC_SUPABASE_URL</span> <span className="text-slate-400 font-sans">Đường dẫn dự án Supabase của bạn</span></div>
+              <div className="flex flex-col sm:flex-row sm:justify-between py-0.5"><span className="text-slate-800 font-bold">NEXT_PUBLIC_SUPABASE_ANON_KEY</span> <span className="text-slate-400 font-sans">Mã khoá công khai anon của bạn</span></div>
+              <div className="flex flex-col sm:flex-row sm:justify-between py-0.5"><span className="text-slate-800 font-bold">SUPABASE_SERVICE_ROLE_KEY</span> <span className="text-slate-400 font-sans">Khóa quản trị (khuyên dùng để ghi đè dữ liệu nâng cao)</span></div>
+            </div>
+          </div>
+
+          {/* Resend block */}
+          <div className="p-3.5 rounded-xl border border-slate-150 bg-slate-50/50 space-y-2">
+            <span className="inline-flex items-center gap-1 rounded bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">
+              RESEND EMAIL LIVE (Gửi thông báo email tự động)
+            </span>
+            <p className="text-slate-500 font-sans text-[10px] leading-relaxed">Tạo tài khoản miễn phí tại <a href="https://resend.com" target="_blank" rel="noreferrer" className="text-blue-600 underline hover:text-blue-700 font-semibold">resend.com</a> để nhận khóa API bảo mật dùng để gửi thông báo đơn hàng.</p>
+            
+            <div className="space-y-1.5 pt-1.5 border-t border-slate-250">
+              <div className="flex flex-col sm:flex-row sm:justify-between py-0.5"><span className="text-slate-800 font-bold">RESEND_API_KEY</span> <span className="text-slate-400 font-sans">Khóa API của Resend (VD: re_abc123...)</span></div>
+            </div>
+
+            <div className="rounded-lg bg-amber-50 p-3 border border-amber-200 text-amber-900 text-[10px] leading-normal font-sans space-y-1 mt-2">
+              <p className="font-bold flex items-center gap-1 text-amber-800">⚠️ LƯU Ý KHI SỬ DỤNG GÓI MIỄN PHÍ CỦA RESEND:</p>
+              <ul className="list-disc pl-4 space-y-1">
+                <li>Nếu chưa cấu hình và xác minh tên miền riêng (Domain), Resend bắt buộc người gửi phải là <code className="bg-amber-150 px-1 rounded text-slate-800">onboarding@resend.dev</code> (được cấu hình mặc định trong chương trình).</li>
+                <li><strong>Địa chỉ email nhận thư</strong> (bạn thiết lập trong ô <i>“Email nhận thông báo đơn hàng”</i> phía trên) <strong>phải trùng khớp</strong> với hòm thư bạn đã sử dụng để đăng ký tài khoản Resend (ví dụ: <code className="bg-amber-150 px-1 rounded text-slate-800">achau.kimduc@gmail.com</code>). Resend sẽ chặn việc gửi thư nếu hòm thư nhận không nằm trong danh sách hòm thư được liên kết tài khoản của bạn trừ khi tên miền riêng đã được xác thực hoàn chỉnh.</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

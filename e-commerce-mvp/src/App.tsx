@@ -959,16 +959,19 @@ export default function App() {
 
               {/* Status integration logs */}
               <div className="rounded-lg bg-slate-900 p-3.5 font-mono text-[11px] text-slate-200 space-y-1.5">
-                <h4 className="font-bold text-amber-400 border-b border-slate-800 pb-1 text-[10px] flex items-center gap-1">
+                <h4 className="font-bold text-amber-400 border-b border-slate-800 pb-1 text-[10px] flex items-center gap-1 animate-pulse">
                   <Database className="h-3 w-3" /> TRẠNG THÁI GIAO DỊCH CHỨC NĂNG
                 </h4>
-                <p className="text-slate-400">1. Lưu Database: {config.supabaseConnected ? "✅ Ghi nhận thực tế ở Supabase PostgreSQL" : "💾 Đã ghi vào local fallback memory database"}</p>
+                <p className="text-slate-400">1. Lưu Database: {config.supabaseConnected ? <span className="text-emerald-400 font-bold">✅ Ghi nhận thực tế ở Supabase PostgreSQL</span> : <span className="text-amber-400 font-bold">💾 Đã ghi vào bộ nhớ cục bộ (Chưa cấu hình Supabase URL)</span>}</p>
                 <p className="text-slate-400">2. Gửi Email thông báo:
                   <span className={orderSuccessDetails.emailSent ? "text-emerald-400 font-bold ml-1" : "text-amber-400 font-bold ml-1"}>
-                    {orderSuccessDetails.emailSent ? "✅ Resend Live Sent!" : "⚠️ Demo Simulated Login"}
+                    {orderSuccessDetails.emailSent ? "✅ Gửi Thư Live Thành Công!" : "⚠️ Chưa Gửi Live (Chạy Chế Độ Giả Lập/Local)"}
                   </span>
                 </p>
-                <p className="text-[10px] text-emerald-400 flex items-start gap-1">Trình mô tả: <span>{orderSuccessDetails.emailLog}</span></p>
+                <div className={`p-2 rounded border mt-1.5 text-[10px] ${orderSuccessDetails.emailSent ? "bg-emerald-950/40 border-emerald-800/40 text-emerald-300" : "bg-amber-950/40 border-amber-800/40 text-amber-300"}`}>
+                  <strong className="block mb-0.5">Nhật ký Hệ thống (Log):</strong>
+                  <p className="leading-normal">{orderSuccessDetails.emailLog}</p>
+                </div>
               </div>
             </div>
 
